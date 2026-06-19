@@ -1,0 +1,10 @@
+{
+  "text": "AutoXPost just shipped! Queue once, publish to X, Mastodon, Bluesky, and LinkedIn from a single SQLite-backed queue. https://example.com/autoxpost",
+  "targets": ["x", "mastodon", "bluesky", "linkedin"],
+  "media_paths": [],
+  "scheduled_at": "2026-06-20T14:00:00",
+  "metadata": {
+    "campaign": "launch",
+    "tags": ["launch", "automation", "social"]
+  }
+}

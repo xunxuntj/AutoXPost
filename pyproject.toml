@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autoxpost"
+version = "0.1.0"
+description = "Cross-platform social poster: queue once, publish to X, Mastodon, Bluesky, LinkedIn."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "AutoXPost contributors" }]
+keywords = ["social-media", "twitter", "x", "mastodon", "bluesky", "linkedin", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications",
+]
+
+# Runtime deps are intentionally minimal — only the scheduler and the bits
+# every platform needs are required. Each platform's SDK is an extra so a
+# user who only wants Bluesky doesn't pull tweepy.
+dependencies = [
+    "click>=8.1",
+    "python-dotenv>=1.0",
+    "APScheduler>=3.10",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+x = ["tweepy>=4.14"]
+mastodon = ["mastodon-py>=1.8"]
+bluesky = ["atproto>=0.0.50"]
+linkedin = ["requests>=2.31"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+autoxpost = "autoxpost.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_unused_ignores = true
