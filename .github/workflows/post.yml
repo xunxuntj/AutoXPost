@@ -1,0 +1,116 @@
+name: post
+
+# Three scheduled runs per day, in US Eastern time (UTC-5).
+# GitHub Actions cron is in UTC, so these are fixed UTC offsets; they
+# will drift by 1 hour during US daylight saving time. If you need
+# DST-aware scheduling, switch the values to your desired UTC offsets
+# directly.
+#
+#   8am EST  → 13:00 UTC
+#   1pm EST  → 18:00 UTC
+#   9pm EST  → 02:00 UTC (next day)
+#
+# GitHub may delay the start of a scheduled run by up to ~30 minutes.
+
+on:
+  schedule:
+    - cron: "0 13 * * *"
+    - cron: "0 18 * * *"
+    - cron: "0 2 * * *"
+  # Manual trigger for testing — runs the same flow once.
+  workflow_dispatch:
+    inputs:
+      no_telegram:
+        description: "Skip the Telegram poll"
+        type: boolean
+        default: false
+
+# Needs write access so the action can commit back updated post
+# statuses and the Telegram offset file.
+permissions:
+  contents: write
+
+# Don't let a slow post hold up the next run.
+concurrency:
+  group: autoxpost-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Platform credentials — wire all of these as repository secrets.
+      # Anything left blank is treated as "not configured" and skipped.
+      AUTOXPOST_LOG_LEVEL: ${{ vars.AUTOXPOST_LOG_LEVEL || 'INFO' }}
+      AUTOXPOST_DB: /tmp/autoxpost.db
+      BLUESKY_PDS: ${{ vars.BLUESKY_PDS }}
+
+      X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+      X_API_KEY: ${{ secrets.X_API_KEY }}
+      X_API_SECRET: ${{ secrets.X_API_SECRET }}
+      X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+      X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+
+      MASTODON_BASE_URL: ${{ secrets.MASTODON_BASE_URL }}
+      MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+
+      BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+      BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+
+      LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+      LINKEDIN_AUTHOR_URN: ${{ secrets.LINKEDIN_AUTHOR_URN }}
+
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      # Comma-separated list; falls back to "all configured platforms".
+      AUTOXPOST_DEFAULT_TARGETS: ${{ vars.AUTOXPOST_DEFAULT_TARGETS }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # We push commits back at the end; give the action a clean
+          # working tree to start with.
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install autoxpost
+        run: |
+          python -m pip install --upgrade pip
+          # Install all platform SDKs. The CLI imports them lazily, so
+          # even if a particular platform's tokens aren't set, the
+          # install is harmless.
+          pip install -e ".[x,mastodon,bluesky]"
+
+      - name: Run tick
+        id: tick
+        run: |
+          if [ "${{ inputs.no_telegram }}" = "true" ]; then
+            FLAGS="--no-telegram"
+          else
+            FLAGS=""
+          fi
+          autoxpost tick $FLAGS \
+            --posts-dir posts \
+            --telegram-offset-file state/telegram_offset.txt \
+            --default-targets "${AUTOXPOST_DEFAULT_TARGETS:-}"
+
+      - name: Commit back state changes
+        if: always()
+        run: |
+          git config user.name "autoxpost-bot"
+          git config user.email "autoxpost-bot@users.noreply.github.com"
+          # Only add files we expect this workflow to touch; never
+          # touch posts/*.json that haven't changed.
+          git add posts/*.json state/telegram_offset.txt || true
+          if git diff --cached --quiet; then
+            echo "no state changes to commit"
+          else
+            git commit -m "autoxpost tick: update post statuses and telegram offset"
+            git push
+          fi

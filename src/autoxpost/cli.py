@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,8 @@ from autoxpost.core.publisher import Publisher
 from autoxpost.core.queue import PostQueue
 from autoxpost.core.scheduler import PostScheduler
 from autoxpost.platforms import build_adapters
+from autoxpost.runners.predefined import PredefinedRunner
+from autoxpost.runners.telegram import TelegramRunner
 
 
 def _load_config() -> Config:
@@ -152,6 +155,87 @@ def platforms() -> None:
         }.get(platform, False)
         if creds_present and platform not in enabled:
             click.echo(f"  ✗ {platform} (creds present, SDK missing — pip install {optional})")
+
+
+@main.command()
+@click.option("--posts-dir", default="posts", show_default=True,
+              help="Directory of predefined post JSON files.")
+@click.option("--telegram/--no-telegram", default=True,
+              help="Poll the Telegram bot for new messages.")
+@click.option("--telegram-offset-file", default="state/telegram_offset.txt",
+              show_default=True,
+              help="File storing the last processed Telegram update_id.")
+@click.option("--telegram-bot-token-env", default="TELEGRAM_BOT_TOKEN",
+              show_default=True,
+              help="Env var name holding the Telegram bot token.")
+@click.option("--default-targets", default=None,
+              help="Comma-separated targets for Telegram posts. "
+                   "Defaults to every configured platform.")
+def tick(
+    posts_dir: str,
+    telegram: bool,
+    telegram_offset_file: str,
+    telegram_bot_token_env: str,
+    default_targets: str | None,
+) -> None:
+    """One shot: publish due predefined posts and any new Telegram messages.
+
+    Designed to be called from a cron (e.g. GitHub Actions). Use `--no-telegram`
+    to disable the Telegram half and only run the predefined-post flow.
+    """
+    cfg = _load_config()
+    queue, publisher = _build_publisher(cfg)
+    if not publisher.adapters:
+        click.echo("error: no platforms configured. Set env vars first.", err=True)
+        sys.exit(2)
+
+    # 1. Predefined posts.
+    pre = PredefinedRunner(posts_dir=posts_dir, publisher=publisher)
+    pre_result = pre.run()
+    click.echo(
+        f"predefined: published={pre_result.published} "
+        f"skipped={pre_result.skipped} failed={pre_result.failed}"
+    )
+
+    # 2. Telegram.
+    if telegram:
+        token = os.environ.get(telegram_bot_token_env)
+        if not token:
+            click.echo(f"telegram: {telegram_bot_token_env} not set; skipping", err=True)
+        else:
+            offset_path = Path(telegram_offset_file)
+            offset = _read_offset(offset_path)
+            tg = TelegramRunner(
+                bot_token=token,
+                publisher=publisher,
+                default_targets=(
+                    [t.strip() for t in default_targets.split(",") if t.strip()]
+                    if default_targets
+                    else None
+                ),
+            )
+            new_offset = tg.run(offset=offset)
+            if new_offset != offset:
+                _write_offset(offset_path, new_offset)
+                click.echo(f"telegram: advanced offset to {new_offset}")
+            else:
+                click.echo("telegram: no new messages")
+
+    queue.close()
+
+
+def _read_offset(path: Path) -> int:
+    if not path.exists():
+        return 0
+    try:
+        return int(path.read_text().strip() or "0")
+    except ValueError:
+        return 0
+
+
+def _write_offset(path: Path, value: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{value}\n")
 
 
 if __name__ == "__main__":

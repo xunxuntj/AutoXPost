@@ -41,10 +41,16 @@ class Publisher:
         Platforms the post requested but that have no configured adapter are
         recorded as `skipped` with an explanatory error so the user can fix
         the env later.
+
+        The passed-in `post` is mutated in place: `status`, `published_at`,
+        and `target_results` are filled in with the actual outcomes so
+        callers (e.g. the predefined runner) can write the post back to
+        disk with accurate state.
         """
         self.queue.update_status(post.id, PostStatus.PUBLISHING)
         succeeded: list[str] = []
         failed: list[tuple[str, str]] = []
+        results: list[PostTarget] = []
 
         for platform in post.targets:
             target = self._existing_target(post.id, platform) or PostTarget(platform=platform)
@@ -55,6 +61,7 @@ class Publisher:
                 target.status = TargetStatus.SKIPPED
                 target.error = f"no adapter configured for platform '{platform}'"
                 self.queue.update_target(post.id, target)
+                results.append(target)
                 failed.append((platform, target.error))
                 continue
 
@@ -66,6 +73,7 @@ class Publisher:
                 target.error = f"{type(exc).__name__}: {exc}"[:1000]
                 self.queue.update_target(post.id, target)
                 self.queue.log_publish(post.id, platform, success=False, error=target.error)
+                results.append(target)
                 failed.append((platform, target.error))
                 continue
 
@@ -76,12 +84,14 @@ class Publisher:
                 target.error = None
                 self.queue.update_target(post.id, target)
                 self.queue.log_publish(post.id, platform, success=True)
+                results.append(target)
                 succeeded.append(platform)
             else:
                 target.status = TargetStatus.FAILED
                 target.error = outcome.error
                 self.queue.update_target(post.id, target)
                 self.queue.log_publish(post.id, platform, success=False, error=outcome.error)
+                results.append(target)
                 failed.append((platform, outcome.error or "unknown error"))
 
         # Roll the post's overall status up.
@@ -94,6 +104,12 @@ class Publisher:
         self.queue.update_status(
             post.id, overall, published_at=datetime.utcnow() if overall != PostStatus.FAILED else None
         )
+        # Mirror the outcomes back onto the in-memory post so callers can
+        # serialise it (e.g. write back to a JSON file on disk).
+        post.target_results = results
+        post.status = overall
+        if overall != PostStatus.FAILED:
+            post.published_at = datetime.utcnow()
         return PublishResult(post_id=post.id, succeeded=succeeded, failed=failed)
 
     def _existing_target(self, post_id: str, platform: str) -> PostTarget | None:
