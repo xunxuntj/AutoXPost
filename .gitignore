@@ -29,3 +29,6 @@ media/
 .vscode/
 *.swp
 .DS_Store
+
+# Claude Code (per-developer config)
+.claude/
