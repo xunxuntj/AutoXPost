@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from autoxpost.config import XConfig
 from autoxpost.core.post import Post
+from autoxpost.core.safety import RateLimited, RateLimitSignal
 from autoxpost.platforms.base import PlatformAdapter, PublishOutcome
 
 log = logging.getLogger(__name__)
@@ -61,8 +63,37 @@ class XAdapter(PlatformAdapter):
         try:
             resp = self._client.create_tweet(text=post.text, media_ids=media_ids or None)
         except Exception as exc:  # noqa: BLE001
-            return PublishOutcome(success=False, error=f"{type(exc).__name__}: {exc}")
+            raise self._coerce_rate_limit(exc) from exc
 
         tweet_id = str(resp.data["id"]) if resp.data else None
         url = f"https://x.com/i/web/status/{tweet_id}" if tweet_id else None
         return PublishOutcome(success=True, remote_id=tweet_id, remote_url=url)
+
+    # --- helpers ------------------------------------------------------------
+
+    @staticmethod
+    def _coerce_rate_limit(exc: BaseException) -> BaseException:
+        """Translate X / Twitter rate-limit responses into RateLimited.
+
+        tweepy's ``TooManyRequests`` exposes ``response.headers`` with the
+        standard ``x-rate-limit-reset`` (epoch seconds) and ``retry-after``.
+        For other tweepy errors we fall through; the publisher will still
+        record the failure as a generic failure for the kill switch.
+        """
+        try:
+            import tweepy  # type: ignore
+        except ImportError:
+            return exc
+        if not isinstance(exc, tweepy.errors.TooManyRequests):
+            return exc
+        headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+        retry_after = headers.get("retry-after")
+        reset = headers.get("x-rate-limit-reset")
+        signal = RateLimitSignal(
+            retry_after_seconds=float(retry_after) if retry_after else None,
+            reset_at=(
+                datetime.utcfromtimestamp(int(reset)) if reset else None
+            ),
+            reason=f"x: 429 ({getattr(exc, 'api_codes', lambda: [])() or ''})".strip(),
+        )
+        return RateLimited(signal, original=exc)

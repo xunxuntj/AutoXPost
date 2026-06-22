@@ -162,6 +162,64 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Risk control
+
+AutoXPost ships with anti-ban protections enabled by default. A
+`RiskGuard` wraps every adapter call and applies per-platform rate
+limits, duplicate detection, jitter, and a kill switch that pauses a
+platform after repeated failures.
+
+**What's on by default**
+
+- `min_interval_seconds` between posts to the same platform
+- `daily_cap` and a shorter `burst_cap` (per hour) on each platform
+- `jitter_range_seconds` of random extra sleep between successful posts
+- Duplicate-text detection within a 24h window
+- A kill switch that pauses a platform for `cooldown_minutes` after
+  `kill_switch_threshold` consecutive failures (default 5 / 15 min for
+  X/Mastodon/Bluesky; 3 / 60 min for LinkedIn)
+- Auto-recognition of `429` / `RateLimitExceeded` from each platform:
+  the wait hint (`Retry-After`, `x-rate-limit-reset`, atproto's
+  `reset_at`) is extracted and used to set the cooldown
+
+When any check trips, the target is recorded as
+`TargetStatus.SKIPPED` with a human-readable reason in `target.error`
+and the post status rolls up to `FAILED` so the runner surfaces it.
+Nothing is retried until the cooldown elapses.
+
+**Tuning per platform**
+
+Every limit is env-overridable. The pattern is
+`AUTOXPOST_<UPPER>_<FIELD>`, e.g.:
+
+| Env var | Default (X) | Default (LinkedIn) |
+| --- | --- | --- |
+| `*_MIN_INTERVAL_SECONDS` | 90 | 300 |
+| `*_DAILY_CAP` | 50 | 50 |
+| `*_BURST_CAP` | 5 | 3 |
+| `*_JITTER_MIN_SECONDS` / `_MAX_SECONDS` | 15 / 60 | 60 / 180 |
+| `*_COOLDOWN_MINUTES` | 30 | 60 |
+| `*_KILL_SWITCH_THRESHOLD` | 5 | 3 |
+
+The full set of defaults lives in
+[`src/autoxpost/core/safety.py`](src/autoxpost/core/safety.py). The
+defaults err on the side of safety for **new / unverified** accounts;
+established accounts with a track record should raise `*_DAILY_CAP`
+and shrink `*_MIN_INTERVAL_SECONDS` via env.
+
+Global knobs:
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `AUTOXPOST_SAFETY_ENABLED` | `true` | Master switch; `false` bypasses every check |
+| `AUTOXPOST_DUPLICATE_WINDOW_HOURS` | `24` | How far back to look for duplicate text |
+| `AUTOXPOST_HASH_HISTORY` | `200` | Max posted-hash rows kept per platform |
+
+**Disabling safety**
+
+Set `AUTOXPOST_SAFETY_ENABLED=false`. The guard becomes a no-op; the
+publisher calls adapters exactly as it did before this feature shipped.
+
 ## License
 
 MIT

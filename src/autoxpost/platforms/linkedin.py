@@ -8,12 +8,14 @@ author URN (`urn:li:person:...`).
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 
 from autoxpost.config import LinkedInConfig
 from autoxpost.core.post import Post
+from autoxpost.core.safety import RateLimited, RateLimitSignal
 from autoxpost.platforms.base import PlatformAdapter, PublishOutcome
 
 log = logging.getLogger(__name__)
@@ -72,7 +74,34 @@ class LinkedInAdapter(PlatformAdapter):
         try:
             resp = requests.post(f"{API_BASE}/ugcPosts", json=body, headers=self._headers, timeout=30)
         except requests.RequestException as exc:
-            return PublishOutcome(success=False, error=f"network: {exc}")
+            raise RateLimited(
+                RateLimitSignal(
+                    retry_after_seconds=None,
+                    reset_at=None,
+                    reason=f"linkedin: network: {exc}",
+                ),
+                original=exc,
+            ) from exc
+
+        # 429 first — surface as a recoverable rate-limit signal so the
+        # guard can pause publishing rather than treating it as a
+        # permanent failure.
+        if resp.status_code == 429:
+            retry = resp.headers.get("Retry-After") or resp.headers.get("retry-after")
+            reset = resp.headers.get("X-RateLimit-Reset") or resp.headers.get("x-ratelimit-reset")
+            reset_at: datetime | None = None
+            if reset:
+                try:
+                    reset_at = datetime.fromtimestamp(int(reset), tz=timezone.utc)
+                except (TypeError, ValueError):
+                    reset_at = None
+            raise RateLimited(
+                RateLimitSignal(
+                    retry_after_seconds=float(retry) if retry else None,
+                    reset_at=reset_at,
+                    reason="linkedin: 429",
+                )
+            )
 
         if resp.status_code >= 300:
             return PublishOutcome(success=False, error=f"HTTP {resp.status_code}: {resp.text[:500]}")

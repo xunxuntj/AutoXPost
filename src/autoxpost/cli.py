@@ -15,6 +15,7 @@ from autoxpost.config import Config
 from autoxpost.core.post import Post
 from autoxpost.core.publisher import Publisher
 from autoxpost.core.queue import PostQueue
+from autoxpost.core.safety import QueueRiskStore, build_guard
 from autoxpost.core.scheduler import PostScheduler
 from autoxpost.platforms import build_adapters
 from autoxpost.runners.predefined import PredefinedRunner
@@ -30,7 +31,13 @@ def _load_config() -> Config:
 def _build_publisher(cfg: Config) -> tuple[PostQueue, Publisher]:
     queue = PostQueue(cfg.db_path)
     adapters = build_adapters(cfg)
-    return queue, Publisher(queue, adapters)
+    store = QueueRiskStore(queue.conn)
+    guard = build_guard(
+        enabled=cfg.safety.enabled,
+        store=store,
+        platforms=list(adapters.keys()),
+    )
+    return queue, Publisher(queue, adapters, guard=guard)
 
 
 @click.group()

@@ -79,6 +79,19 @@ class LinkedInConfig:
 
 
 @dataclass
+class SafetyConfig:
+    """Top-level toggles for the RiskGuard.
+
+    Per-platform thresholds live in ``autoxpost.core.safety`` and are
+    overridden via env (``AUTOXPOST_<UPPER>_<FIELD>``). The fields here
+    only configure the global knobs.
+    """
+    enabled: bool = True
+    duplicate_window_hours: int = 24
+    hash_history: int = 200
+
+
+@dataclass
 class Config:
     db_path: Path = field(default_factory=lambda: Path("autoxpost.db"))
     log_level: str = "INFO"
@@ -86,6 +99,7 @@ class Config:
     mastodon: MastodonConfig = field(default_factory=MastodonConfig)
     bluesky: BlueskyConfig = field(default_factory=BlueskyConfig)
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
+    safety: SafetyConfig = field(default_factory=SafetyConfig)
 
     @classmethod
     def load(cls) -> "Config":
@@ -114,6 +128,12 @@ class Config:
         cfg.linkedin = LinkedInConfig(
             access_token=_env("LINKEDIN_ACCESS_TOKEN"),
             author_urn=_env("LINKEDIN_AUTHOR_URN"),
+        )
+        cfg.safety = SafetyConfig(
+            enabled=(_env("AUTOXPOST_SAFETY_ENABLED") or "true").lower()
+            in ("1", "true", "yes", "on"),
+            duplicate_window_hours=int(_env("AUTOXPOST_DUPLICATE_WINDOW_HOURS") or 24),
+            hash_history=int(_env("AUTOXPOST_HASH_HISTORY") or 200),
         )
         return cfg
 

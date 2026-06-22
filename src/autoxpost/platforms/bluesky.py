@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from autoxpost.config import BlueskyConfig
 from autoxpost.core.post import Post
+from autoxpost.core.safety import RateLimited, RateLimitSignal
 from autoxpost.platforms.base import PlatformAdapter, PublishOutcome
 
 log = logging.getLogger(__name__)
@@ -72,7 +74,7 @@ class BlueskyAdapter(PlatformAdapter):
                 )
             )
         except Exception as exc:  # noqa: BLE001
-            return PublishOutcome(success=False, error=f"{type(exc).__name__}: {exc}")
+            raise self._coerce_rate_limit(exc) from exc
 
         did = self._client.me.did
         handle = self._client.me.handle
@@ -81,6 +83,42 @@ class BlueskyAdapter(PlatformAdapter):
             remote_id=did,
             remote_url=f"https://bsky.app/profile/{handle}",
         )
+
+    # --- helpers ------------------------------------------------------------
+
+    @staticmethod
+    def _coerce_rate_limit(exc: BaseException) -> BaseException:
+        """Translate atproto ``RateLimitExceeded`` into RateLimited.
+
+        ``atproto`` (>= 0.0.46) exposes ``RateLimitExceeded.reset_at`` as a
+        timezone-aware datetime. Earlier versions may not — we fall through
+        to the original exception in that case.
+        """
+        try:
+            from atproto.exceptions import RateLimitExceeded  # type: ignore
+        except ImportError:
+            return exc
+        if isinstance(exc, RateLimitExceeded):
+            reset_at = getattr(exc, "reset_at", None)
+            # atproto may hand back a tz-aware or naive datetime; normalise.
+            reset_iso = None
+            if reset_at is not None:
+                try:
+                    reset_iso = (
+                        reset_at if reset_at.tzinfo
+                        else reset_at.replace(tzinfo=timezone.utc)
+                    )
+                except Exception:  # noqa: BLE001
+                    reset_iso = None
+            return RateLimited(
+                RateLimitSignal(
+                    retry_after_seconds=None,
+                    reset_at=reset_iso,
+                    reason="bluesky: rate limit",
+                ),
+                original=exc,
+            )
+        return exc
 
 
 def _now_iso() -> str:

@@ -42,7 +42,7 @@ class PredefinedRunner:
             log.info("posts dir %s does not exist; skipping", self.posts_dir)
             return result
 
-        for path in sorted(self.posts_dir.glob("*.json")):
+        for path in self._iter_posts():
             try:
                 post = Post.from_dict(json.loads(path.read_text()))
             except Exception as exc:  # noqa: BLE001
@@ -67,6 +67,22 @@ class PredefinedRunner:
                 result.failed += 1
             _write_back(path, post)
         return result
+
+    def _iter_posts(self):
+        """Yield post JSON paths in ``scheduled_at`` order (earliest first).
+
+        Files without ``scheduled_at`` are treated as due now (datetime.max
+        would put them last; we want them grouped with the early ones, so
+        we sort them with ``datetime.min`` as a tie-breaker).
+        """
+        def _key(p: Path):
+            try:
+                post = Post.from_dict(json.loads(p.read_text()))
+            except Exception:  # noqa: BLE001
+                return (datetime.min, p.name)
+            return (post.scheduled_at or datetime.min, p.name)
+
+        return sorted(self.posts_dir.glob("*.json"), key=_key)
 
 
 def _write_back(path: Path, post: Post) -> None:

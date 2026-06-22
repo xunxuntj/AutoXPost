@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS publish_log (
 
 CREATE INDEX IF NOT EXISTS idx_log_post_id  ON publish_log(post_id);
 CREATE INDEX IF NOT EXISTS idx_log_created  ON publish_log(created_at);
+
+CREATE TABLE IF NOT EXISTS posted_hashes (
+    platform    TEXT NOT NULL,
+    text_hash   TEXT NOT NULL,
+    post_id     TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (platform, text_hash, created_at)
+);
+CREATE INDEX IF NOT EXISTS idx_hashes_platform_time
+    ON posted_hashes(platform, created_at);
 """
 
 
