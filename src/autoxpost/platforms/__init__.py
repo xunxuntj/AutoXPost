@@ -54,6 +54,11 @@ def build_adapters(config: Any) -> dict[str, PlatformAdapter]:
 
         adapters["linkedin"] = LinkedInAdapter(config.linkedin)
 
+    if config.threads.is_configured:
+        from autoxpost.platforms.threads import ThreadsAdapter
+
+        adapters["threads"] = ThreadsAdapter(config.threads)
+
     return adapters
 
 

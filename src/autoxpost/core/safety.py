@@ -148,6 +148,18 @@ def _default_rules() -> dict[str, PlatformSafetyRule]:
             cooldown_minutes=60,
             kill_switch_threshold=3,
         ),
+        "threads": PlatformSafetyRule(
+            platform="threads",
+            min_interval_seconds=60,
+            daily_cap=50,
+            burst_cap=10,
+            burst_window_seconds=3600,
+            jitter_min_seconds=10,
+            jitter_max_seconds=45,
+            max_retries=3,
+            cooldown_minutes=15,
+            kill_switch_threshold=5,
+        ),
     }
 
 
@@ -245,13 +257,17 @@ def text_hash(text: str) -> str:
 
 
 # Media size limits lifted from the platforms' own docs.
-# Image max for X is 5 MB; Bluesky image max is ~1 MB.
+# Image max for X is 5 MB; Bluesky image max is ~1 MB; Threads accepts
+# JPEG/PNG up to 8 MB and requires a publicly accessible URL.
 MEDIA_LIMITS: dict[str, dict[str, int | tuple[str, ...]]] = {
     "x": {"image_max_bytes": 5 * 1024 * 1024, "allowed_mimes": (
         "image/jpeg", "image/png", "image/webp", "image/gif",
     )},
     "bluesky": {"image_max_bytes": 1 * 1024 * 1024, "allowed_mimes": (
         "image/jpeg", "image/png", "image/webp",
+    )},
+    "threads": {"image_max_bytes": 8 * 1024 * 1024, "allowed_mimes": (
+        "image/jpeg", "image/png",
     )},
 }
 

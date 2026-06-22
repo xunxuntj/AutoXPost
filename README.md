@@ -1,8 +1,9 @@
 # AutoXPost
 
 Cross-platform social poster. Write once, publish to X (Twitter), Mastodon,
-Bluesky, and LinkedIn from a single queue — locally, on a server, or via
-a daily GitHub Action that pulls from `posts/*.json` and a Telegram bot.
+Bluesky, LinkedIn, and Threads from a single queue — locally, on a server,
+or via a daily GitHub Action that pulls from `posts/*.json` and a Telegram
+bot.
 
 ## Features
 
@@ -150,6 +151,7 @@ only the platforms you configure will be used.
 | `MASTODON_BASE_URL`, `MASTODON_ACCESS_TOKEN` | Mastodon | App password or OAuth token |
 | `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD` | Bluesky | App password |
 | `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_AUTHOR_URN` | LinkedIn | OAuth2 user token + `urn:li:person:...` |
+| `THREADS_USER_ID`, `THREADS_ACCESS_TOKEN` | Threads | Long-lived OAuth2 token (60d) + numeric Threads user ID |
 | `TELEGRAM_BOT_TOKEN` | Telegram | Bot token from @BotFather |
 | `AUTOXPOST_DB` | — | SQLite path (default `./autoxpost.db`) |
 | `AUTOXPOST_LOG_LEVEL` | — | `DEBUG` / `INFO` / `WARNING` (default `INFO`) |

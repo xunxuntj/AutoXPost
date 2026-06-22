@@ -79,6 +79,23 @@ class LinkedInConfig:
 
 
 @dataclass
+class ThreadsConfig:
+    """Meta Threads (graph.threads.net) configuration.
+
+    Threads uses the Meta Graph API. A long-lived user access token
+    (valid 60 days, refreshable) and a numeric Threads user ID are
+    both required for posting. Get the user ID from the
+    ``/me?fields=id`` endpoint using the same token.
+    """
+    user_id: str | None = None
+    access_token: str | None = None
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.user_id and self.access_token)
+
+
+@dataclass
 class SafetyConfig:
     """Top-level toggles for the RiskGuard.
 
@@ -99,6 +116,7 @@ class Config:
     mastodon: MastodonConfig = field(default_factory=MastodonConfig)
     bluesky: BlueskyConfig = field(default_factory=BlueskyConfig)
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
+    threads: ThreadsConfig = field(default_factory=ThreadsConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
 
     @classmethod
@@ -129,6 +147,10 @@ class Config:
             access_token=_env("LINKEDIN_ACCESS_TOKEN"),
             author_urn=_env("LINKEDIN_AUTHOR_URN"),
         )
+        cfg.threads = ThreadsConfig(
+            user_id=_env("THREADS_USER_ID"),
+            access_token=_env("THREADS_ACCESS_TOKEN"),
+        )
         cfg.safety = SafetyConfig(
             enabled=(_env("AUTOXPOST_SAFETY_ENABLED") or "true").lower()
             in ("1", "true", "yes", "on"),
@@ -148,6 +170,8 @@ class Config:
             out["bluesky"] = self.bluesky
         if self.linkedin.is_configured:
             out["linkedin"] = self.linkedin
+        if self.threads.is_configured:
+            out["threads"] = self.threads
         return out
 
     def configure_logging(self) -> None:
